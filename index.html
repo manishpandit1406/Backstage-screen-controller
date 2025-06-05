@@ -1,0 +1,1246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stage Backscreen Control</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    :root {
+      --glow-color: #00f5d4;
+    }
+
+    .file-icon {
+      font-size: 1.5em;
+      margin-right: 10px;
+    }
+    .drop-zone {
+      border: 2px dashed var(--glow-color);
+      padding: 2rem;
+      text-align: center;
+      border-radius: 12px;
+      transition: background-color 0.3s ease;
+    }
+    .drop-zone.dragover {
+      background-color: rgba(0, 245, 212, 0.1);
+    }
+    /* Modal styles */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+      background-color: rgba(0, 0, 0, 0.8);
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-content {
+      background-color: #1f2937;
+      margin: auto;
+      padding: 20px;
+      border: 1px solid #888;
+      width: 80%;
+      max-width: 800px;
+      border-radius: 8px;
+      position: relative;
+    }
+    .close-button {
+      color: #aaa;
+      float: right;
+      font-size: 28px;
+      font-weight: bold;
+      position: absolute;
+      top: 10px;
+      right: 20px;
+    }
+    .close-button:hover,
+    .close-button:focus {
+      color: white;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    /* Presentation screen styles */
+    #presentationScreen {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background-color: #000; /* Dark theme */
+      z-index: 2000;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      color: white;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      overflow: hidden; /* For transitions */
+    }
+
+    #presentationContentWrapper {
+      position: relative;
+      width: 111%;
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap; /* Allow multiple media to wrap */
+      gap: 10px; /* Space between multiple media */
+    }
+
+    /* Target specific media elements inside the wrapper */
+    #presentationContentWrapper > :not(.document-viewer) {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      transition: transform 0.5s ease-in-out, opacity 0.5s ease-in-out;
+      transform: scale(0.9); /* Initial zoom out for spotlight effect */
+      opacity: 0; /* Hidden initially for fade-in */
+      border-radius: 8px;
+    }
+    #presentationContentWrapper > .active:not(.document-viewer) {
+      transform: scale(1); /* Zoom in for spotlight */
+      opacity: 1; /* Fade in */
+    }
+
+    #presentationContentWrapper video {
+        flex: 1; /* Allow videos to take available space */
+        min-width: 300px; /* Minimum width for videos when multiple are present */
+    }
+
+    /* MODIFIED: Document viewer (PDF, PPT, DOC) styles */
+    #presentationContentWrapper iframe.document-viewer {
+        width: 100%; /* Take full width of its parent */
+        height: 100%; /* Take full height of its parent */
+        max-width: 90%; /* Constrain to 90% of parent width */
+        object-fit: contain; /* Ensure the document fits within these dimensions */
+        border: none;
+        border-radius: 8px; /* Give it a slight border-radius to match other media */
+        /* Removed position: absolute; top: 0; left: 0; to allow it to flow with flexbox */
+        transition: transform 0.5s ease-in-out, opacity 0.5s ease-in-out;
+        transform: scale(0.9); /* Initial zoom out for spotlight effect */
+        opacity: 0; /* Hidden initially for fade-in */
+    }
+    #presentationContentWrapper iframe.document-viewer.active {
+        transform: scale(1); /* Zoom in for spotlight */
+        opacity: 1; /* Fade in */
+    }
+
+    #presentationControls {
+      position: absolute;
+      bottom: 20px;
+      display: flex;
+      gap: 10px;
+      transition: opacity 0.3s ease-in-out;
+      opacity: 1; /* Default visible */
+      z-index: 2001;
+      left: 50%;
+      transform: translateX(-50%);
+      pointer-events: auto; /* Allow clicks */
+    }
+    /* Class to hide presentation controls */
+    #presentationControls.hidden-controls {
+        opacity: 0;
+        pointer-events: none; /* Make unclickable when hidden */
+    }
+
+    /* Nav buttons will hide */
+    .nav-button-container {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      top: 0;
+      left: 0;
+      pointer-events: none; /* Allow clicks through default */
+      transition: opacity 0.3s ease-in-out;
+      opacity: 1; /* Default visible */
+    }
+    /* Class to hide nav buttons */
+    .nav-button-container.hidden-nav {
+      opacity: 0;
+    }
+
+    .nav-button {
+      background-color: rgba(0, 0, 0, 0.4);
+      color: white;
+      padding: 15px;
+      border-radius: 50%;
+      font-size: 1em;
+      cursor: pointer;
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      transition: background-color 0.3s ease, opacity 0.3s ease, box-shadow 0.3s ease;
+      z-index: 2001;
+      opacity: 0.8; /* Make them slightly opaque initially */
+      pointer-events: auto; /* Re-enable clicks for buttons */
+    }
+
+
+    #prevButton {
+      left: 20px;
+    }
+
+    #nextButton {
+      right: 20px;
+    }
+
+    .control-button {
+      background-color: rgba(0, 245, 212, 0.2);
+      color: var(--glow-color);
+      font-weight: bold;
+      padding: 8px 16px;
+      border-radius: 9999px; /* Pill shape */
+      transition: background-color 0.3s, transform 0.2s, box-shadow 0.3s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+    }
+
+    .control-button:hover {
+      
+      transform: translateY(-2px);
+      
+    }
+
+    .control-button:active {
+      transform: translateY(0);
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+      .nav-button {
+        font-size: 1.5em;
+        padding: 10px;
+      }
+      #prevButton {
+        left: 10px;
+      }
+      #nextButton {
+        right: 10px;
+      }
+      .control-button {
+        padding: 6px 12px;
+        font-size: 0.9em;
+      }
+    }
+  </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex flex-col">
+  <header class="bg-gray-800 p-6 text-center text-3xl font-bold text-teal-300 shadow-md">
+    Stage Backscreen Control
+  </header>
+
+  <main class="flex-1 container mx-auto p-6">
+    <div class="mb-6">
+      <label class="block text-xl mb-2">Upload Individual Files:</label>
+      <div id="dropZone" class="drop-zone mb-4">Drop files here or click to select</div>
+      <input type="file" id="fileInput" multiple class="hidden" />
+      <input type="text" id="packageName" placeholder="Enter package name" class="w-full p-2 rounded bg-gray-700 text-white placeholder-gray-400" />
+      <button onclick="createPackage()" class="mt-4 bg-teal-400 text-black font-bold py-2 px-6 rounded hover:bg-teal-300 transition">Create Package</button>
+    </div>
+
+    <div id="packageList" class="space-y-6"></div>
+  </main>
+
+  <footer class="bg-gray-800 p-4 text-center text-sm text-gray-400">
+    &copy; 2025 Stage Control | Designed by Manish
+  </footer>
+
+  <div id="editPackageModal" class="modal">
+    <div class="modal-content">
+      <span class="close-button" onclick="closeEditModal()">&times;</span>
+      <h2 class="text-2xl font-bold mb-4">Edit Package</h2>
+      <input type="hidden" id="editPackageIndex">
+      <label class="block text-lg mb-2">Package Name:</label>
+      <input type="text" id="editPackageName" class="w-full p-2 rounded bg-gray-700 text-white placeholder-gray-400 mb-4" />
+
+      <h3 class="text-xl font-semibold mb-3">Package Content:</h3>
+      <div id="editPackageContentList" class="space-y-3 mb-4"></div>
+
+      <div class="flex gap-4 mt-6">
+        <button onclick="openCreateMediaSceneModal()" class="bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-500 transition">
+          Add New Media Scene
+        </button>
+        <button onclick="addNewIndividualFile()" class="bg-purple-600 text-white font-bold py-2 px-4 rounded hover:bg-purple-500 transition">
+          Add Individual File
+        </button>
+      </div>
+      <input type="file" id="addIndividualFileInput" multiple class="hidden" />
+
+      <button onclick="updatePackage()" class="mt-6 bg-teal-400 text-black font-bold py-2 px-6 rounded hover:bg-teal-300 transition">Update Package</button>
+    </div>
+  </div>
+
+  <div id="mediaSceneModal" class="modal">
+    <div class="modal-content">
+      <span class="close-button" onclick="closeMediaSceneModal()">&times;</span>
+      <h2 class="text-2xl font-bold mb-4" id="mediaSceneModalTitle">Create Media Scene</h2>
+      <input type="hidden" id="mediaSceneIndex">
+
+      <label class="block text-lg mb-2">Scene Name:</label>
+      <input type="text" id="mediaSceneName" placeholder="Enter media scene name" class="w-full p-2 rounded bg-gray-700 text-white placeholder-gray-400 mb-4" />
+
+      <label class="block text-lg mb-2">Add Files to Scene:</label>
+      <div id="mediaSceneDropZone" class="drop-zone mb-4">Drop files here or click to select</div>
+      <input type="file" id="mediaSceneFileInput" multiple class="hidden" />
+      
+      <div id="mediaSceneFilesList" class="space-y-3 mb-4"></div>
+
+      <button onclick="saveMediaScene()" class="mt-4 bg-teal-400 text-black font-bold py-2 px-6 rounded hover:bg-teal-300 transition">Save Media Scene</button>
+    </div>
+  </div>
+
+  <div id="presentationScreen">
+    <div id="presentationContentWrapper"></div>
+
+    <div class="nav-button-container" id="navButtonContainer">
+      <button id="prevButton" class="nav-button" onclick="prevSlide()"><i class="fas fa-arrow-left"></i></button>
+      <button id="nextButton" class="nav-button" onclick="nextSlide()"><i class="fas fa-arrow-right"></i></button>
+    </div>
+
+    <div id="presentationControls">
+      <button onclick="toggleAllMediaPlayPause()" id="playPauseAllButton" class="control-button hidden">
+        <i class="fas fa-pause" id="playPauseAllIcon"></i> <span id="playPauseAllText">Pause All Media</span>
+      </button>
+      <button onclick="exitPresentation()" class="control-button bg-red-600 text-white">
+        <i class="fas fa-times"></i> Exit Presentation
+      </button>
+    </div>
+  </div>
+
+
+  <script>
+     // Constants
+    const STORAGE_KEY = 'stageControlPackages';
+    const MAX_FILE_SIZE_MB = 50;
+    
+    // DOM Elements
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const editPackageModal = document.getElementById('editPackageModal');
+    const editPackageNameInput = document.getElementById('editPackageName');
+    const editPackageContentList = document.getElementById('editPackageContentList');
+    const addIndividualFileInput = document.getElementById('addIndividualFileInput');
+    const importFileInput = document.getElementById('importFileInput');
+
+    const mediaSceneModal = document.getElementById('mediaSceneModal');
+    const mediaSceneModalTitle = document.getElementById('mediaSceneModalTitle');
+    const mediaSceneIndexInput = document.getElementById('mediaSceneIndex');
+    const mediaSceneNameInput = document.getElementById('mediaSceneName');
+    const mediaSceneDropZone = document.getElementById('mediaSceneDropZone');
+    const mediaSceneFileInput = document.getElementById('mediaSceneFileInput');
+    const mediaSceneFilesList = document.getElementById('mediaSceneFilesList');
+
+    const presentationScreen = document.getElementById('presentationScreen');
+    const presentationContentWrapper = document.getElementById('presentationContentWrapper');
+    const presentationControls = document.getElementById('presentationControls');
+    const navButtonContainer = document.getElementById('navButtonContainer');
+    const prevButton = document.getElementById('prevButton');
+    const nextButton = document.getElementById('nextButton');
+    const playPauseAllButton = document.getElementById('playPauseAllButton');
+    const playPauseAllIcon = document.getElementById('playPauseAllIcon');
+    const playPauseAllText = document.getElementById('playPauseAllText');
+
+    // Application State
+    let packages = [];
+    let selectedFiles = [];
+    let editingPackageIndex = -1;
+    let editingMediaSceneIndex = -1;
+    let currentMediaSceneFiles = [];
+    let presentationPackageIndex = -1;
+    let currentSlideIndex = 0;
+    let controlsHideTimeout;
+    let areAllMediaPlaying = false;
+    let currentPlayingMediaElements = [];
+    let isCurrentSlidePdf = false;
+
+    // Initialize the application
+    document.addEventListener('DOMContentLoaded', () => {
+      loadPackagesFromStorage();
+      setupEventListeners();
+    });
+
+    function setupEventListeners() {
+      dropZone.addEventListener('click', () => fileInput.click());
+      fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+      mediaSceneDropZone.addEventListener('click', () => mediaSceneFileInput.click());
+      mediaSceneFileInput.addEventListener('change', (e) => handleMediaSceneFiles(e.target.files));
+
+      addIndividualFileInput.addEventListener('change', (e) => handleAddIndividualFilesToEdit(e.target.files));
+
+      // Drag and Drop for initial package creation
+      ['dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, (e) => {
+          e.preventDefault();
+          if (eventName === 'dragover') dropZone.classList.add('dragover');
+          else dropZone.classList.remove('dragover');
+        });
+        mediaSceneDropZone.addEventListener(eventName, (e) => {
+          e.preventDefault();
+          if (eventName === 'dragover') mediaSceneDropZone.classList.add('dragover');
+          else mediaSceneDropZone.classList.remove('dragover');
+        });
+      });
+      dropZone.addEventListener('drop', (e) => handleFiles(e.dataTransfer.files));
+      mediaSceneDropZone.addEventListener('drop', (e) => handleMediaSceneFiles(e.dataTransfer.files));
+    }
+
+    // --- Local Storage Functions ---
+    function savePackagesToStorage() {
+      try {
+        // Convert files to base64 for storage
+        const packagesForStorage = packages.map(pkg => ({
+          ...pkg,
+          slides: pkg.slides.map(slide => {
+            if (slide.type === 'file') {
+              return {
+                type: 'file',
+                file: {
+                  name: slide.file.name,
+                  type: slide.file.type,
+                  size: slide.file.size,
+                  data: fileToBase64(slide.file)
+                }
+              };
+            } else if (slide.type === 'media-package') {
+              return {
+                type: 'media-package',
+                name: slide.name,
+                mediaItems: slide.mediaItems.map(item => ({
+                  playbackSettings: item.playbackSettings,
+                  file: {
+                    name: item.file.name,
+                    type: item.file.type,
+                    size: item.file.size,
+                    data: fileToBase64(item.file)
+                  }
+                }))
+              };
+            }
+            return slide;
+          })
+        }));
+
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(packagesForStorage));
+      } catch (error) {
+        console.error('Error saving packages to storage:', error);
+        toastr.error('Failed to save packages to local storage.');
+      }
+    }
+
+    function loadPackagesFromStorage() {
+      try {
+        const storedPackages = localStorage.getItem(STORAGE_KEY);
+        if (storedPackages) {
+          const parsedPackages = JSON.parse(storedPackages);
+          
+          // Convert base64 back to files
+          packages = parsedPackages.map(pkg => ({
+            ...pkg,
+            slides: pkg.slides.map(slide => {
+              if (slide.type === 'file') {
+                return {
+                  type: 'file',
+                  file: base64ToFile(slide.file.data, slide.file.name, slide.file.type)
+                };
+              } else if (slide.type === 'media-package') {
+                return {
+                  type: 'media-package',
+                  name: slide.name,
+                  mediaItems: slide.mediaItems.map(item => ({
+                    playbackSettings: item.playbackSettings,
+                    file: base64ToFile(item.file.data, item.file.name, item.file.type)
+                  }))
+                };
+              }
+              return slide;
+            })
+          }));
+
+          renderPackageList();
+          toastr.success('Packages loaded from local storage.');
+        }
+      } catch (error) {
+        console.error('Error loading packages from storage:', error);
+        toastr.error('Failed to load packages from local storage.');
+      }
+    }
+
+    function clearStorage() {
+      if (confirm('This will delete ALL saved packages. Continue?')) {
+        localStorage.removeItem(STORAGE_KEY);
+        packages = [];
+        renderPackageList();
+        toastr.success('All packages cleared from storage.');
+      }
+    }
+
+    // --- File Conversion Functions ---
+    function fileToBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = error => reject(error);
+      });
+    }
+
+    async function base64ToFile(base64, fileName, fileType) {
+      const res = await fetch(base64);
+      const blob = await res.blob();
+      return new File([blob], fileName, { type: fileType });
+    }
+
+    // --- Import/Export Functions ---
+    function exportPackages() {
+      if (packages.length === 0) {
+        toastr.error('No packages to export.');
+        return;
+      }
+
+      try {
+        // Create a simplified version for export (without base64 conversion)
+        const exportData = packages.map(pkg => ({
+          name: pkg.name,
+          created: pkg.created,
+          slides: pkg.slides.map(slide => {
+            if (slide.type === 'file') {
+              return {
+                type: 'file',
+                fileName: slide.file.name,
+                fileType: slide.file.type,
+                fileSize: slide.file.size
+              };
+            } else if (slide.type === 'media-package') {
+              return {
+                type: 'media-package',
+                name: slide.name,
+                mediaItems: slide.mediaItems.map(item => ({
+                  playbackSettings: item.playbackSettings,
+                  fileName: item.file.name,
+                  fileType: item.file.type,
+                  fileSize: item.file.size
+                }))
+              };
+            }
+            return slide;
+          })
+        }));
+
+        const dataStr = JSON.stringify(exportData, null, 2);
+        const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
+        
+        const exportName = `stage-control-packages-${new Date().toISOString().slice(0, 10)}.json`;
+        
+        const linkElement = document.createElement('a');
+        linkElement.setAttribute('href', dataUri);
+        linkElement.setAttribute('download', exportName);
+        linkElement.click();
+        
+        toastr.success('Packages exported successfully!');
+      } catch (error) {
+        console.error('Error exporting packages:', error);
+        toastr.error('Failed to export packages.');
+      }
+    }
+
+    function importPackages(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const importedData = JSON.parse(e.target.result);
+          
+          // Show confirmation dialog
+          if (confirm(`Import ${importedData.length} package(s)? This will add to your existing packages.`)) {
+            // Create a mapping of imported package names to avoid duplicates
+            const existingNames = packages.map(pkg => pkg.name.toLowerCase());
+            let addedCount = 0;
+            
+            importedData.forEach(importedPkg => {
+              // Check for duplicate names and modify if needed
+              let newName = importedPkg.name;
+              let counter = 1;
+              while (existingNames.includes(newName.toLowerCase())) {
+                newName = `${importedPkg.name} (${counter})`;
+                counter++;
+              }
+              
+              packages.push({
+                name: newName,
+                created: importedPkg.created || new Date(),
+                slides: importedPkg.slides || []
+              });
+              
+              existingNames.push(newName.toLowerCase());
+              addedCount++;
+            });
+            
+            savePackagesToStorage();
+            renderPackageList();
+            toastr.success(`Successfully imported ${addedCount} package(s).`);
+          }
+        } catch (error) {
+          console.error('Error importing packages:', error);
+          toastr.error('Invalid package file format.');
+        }
+      };
+      reader.readAsText(file);
+      event.target.value = ''; // Reset input to allow re-importing the same file
+    }
+
+    // --- File Handling Functions ---
+    function handleFiles(files) {
+      for (let file of files) {
+        if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+          toastr.error(`${file.name} is too large. Max ${MAX_FILE_SIZE_MB}MB.`);
+          continue;
+        }
+        selectedFiles.push(file);
+      }
+      displaySelectedFiles();
+    }
+
+    function displaySelectedFiles() {
+      const list = selectedFiles.map(f => `
+        <div class="bg-gray-800 p-3 rounded flex justify-between items-center">
+          <span><i class="file-icon ${getFileIcon(f.type)}"></i> ${f.name} (${(f.size / 1024 / 1024).toFixed(2)} MB)</span>
+          <button onclick="removeFile('${f.name}')" class="text-red-500 hover:underline">Remove</button>
+        </div>
+      `).join('');
+      dropZone.innerHTML = list || 'Drop files here or click to select';
+    }
+
+    function removeFile(name) {
+      selectedFiles = selectedFiles.filter(f => f.name !== name);
+      displaySelectedFiles();
+    }
+
+    function getFileIcon(type) {
+      if (type.includes('image')) return 'fas fa-image';
+      if (type.includes('video')) return 'fas fa-video';
+      if (type.includes('audio')) return 'fas fa-music';
+      if (type.includes('pdf')) return 'fas fa-file-pdf';
+      if (type.includes('presentation') || type.includes('powerpoint')) return 'fas fa-file-powerpoint';
+      if (type.includes('document') || type.includes('word')) return 'fas fa-file-word';
+      if (type.includes('text')) return 'fas fa-file-alt';
+      return 'fas fa-file';
+    }
+
+    // --- Package Management ---
+    function createPackage() {
+      const name = document.getElementById('packageName').value.trim();
+      if (!name || selectedFiles.length === 0) {
+        toastr.error('Please enter package name and select files.');
+        return;
+      }
+
+      const slides = selectedFiles.map(file => ({ type: 'file', file: file }));
+
+      const newPkg = {
+        name,
+        slides,
+        created: new Date()
+      };
+      
+      packages.push(newPkg);
+      selectedFiles = [];
+      fileInput.value = '';
+      document.getElementById('packageName').value = '';
+      displaySelectedFiles();
+      
+      savePackagesToStorage();
+      renderPackageList();
+      toastr.success('Package created and saved!');
+    }
+
+    function renderPackageList() {
+      const list = packages.map((pkg, index) => `
+        <div class="bg-gray-800 p-4 rounded shadow">
+          <div class="flex justify-between items-center">
+            <h2 class="text-lg font-semibold">${pkg.name}</h2>
+            <div class="space-x-2">
+              <button class="text-green-400 hover:text-green-300 transition" onclick="showPresentation(${index})">Present</button>
+              <button class="text-yellow-400 hover:text-yellow-300 transition" onclick="editPackage(${index})">Edit</button>
+              <button class="text-red-400 hover:text-red-300 transition" onclick="deletePackage(${index})">Delete</button>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mt-3">
+            ${pkg.slides.map(slide => {
+              if (slide.type === 'file') {
+                const f = slide.file;
+                return `<div class="bg-gray-700 p-2 rounded">
+                          <div><i class="file-icon ${getFileIcon(f.type)}"></i> ${f.name}</div>
+                          <div class="text-xs text-gray-400">${(f.size / 1024 / 1024).toFixed(2)} MB</div>
+                        </div>`;
+              } else if (slide.type === 'media-package') {
+                return `<div class="bg-purple-700 p-2 rounded col-span-full">
+                          <div class="font-bold"><i class="fas fa-layer-group"></i> ${slide.name}.ms</div>
+                          <div class="text-xs text-gray-300">${slide.mediaItems.length} items</div>
+                        </div>`;
+              }
+              return '';
+            }).join('')}
+          </div>
+          <div class="text-xs text-gray-400 mt-2">Created: ${new Date(pkg.created).toLocaleString()}</div>
+        </div>
+      `).join('');
+      document.getElementById('packageList').innerHTML = list;
+    }
+
+    function deletePackage(index) {
+      if (confirm('Delete this package?')) {
+        packages.splice(index, 1);
+        savePackagesToStorage();
+        renderPackageList();
+        toastr.success('Package deleted.');
+      }
+    }
+
+    // --- Edit Package Modal Functions ---
+    function editPackage(index) {
+      editingPackageIndex = index;
+      const pkg = packages[index];
+      editPackageNameInput.value = pkg.name;
+      renderEditPackageContentList();
+      editPackageModal.style.display = 'flex';
+    }
+
+    function closeEditModal() {
+      editPackageModal.style.display = 'none';
+      editingPackageIndex = -1;
+    }
+
+    function renderEditPackageContentList() {
+      if (editingPackageIndex === -1 || !packages[editingPackageIndex]) {
+        editPackageContentList.innerHTML = '<p class="text-red-400">Error: Package not found for editing.</p>';
+        return;
+      }
+      const pkg = packages[editingPackageIndex];
+      const list = pkg.slides.map((slide, slideIndex) => {
+        if (slide.type === 'file') {
+          const f = slide.file;
+          return `
+            <div class="bg-gray-700 p-3 rounded flex justify-between items-center">
+              <span><i class="file-icon ${getFileIcon(f.type)}"></i> ${f.name} (${(f.size / 1024 / 1024).toFixed(2)} MB)</span>
+              <button onclick="removeSlideFromPackage(${slideIndex})" class="text-red-500 hover:underline">Remove</button>
+            </div>
+          `;
+        } else if (slide.type === 'media-package') {
+          return `
+            <div class="bg-purple-800 p-3 rounded flex justify-between items-center">
+              <span><i class="fas fa-layer-group"></i> ${slide.name}.ms ( ${slide.mediaItems.length} files)</span>
+              <div class="space-x-2">
+                <button onclick="editMediaScene(${slideIndex})" class="text-yellow-400 hover:underline">Edit Scene</button>
+                <button onclick="removeSlideFromPackage(${slideIndex})" class="text-red-500 hover:underline">Remove</button>
+              </div>
+            </div>
+          `;
+        }
+        return '';
+      }).join('');
+      editPackageContentList.innerHTML = list || '<p class="text-gray-400">No content in this package yet.</p>';
+    }
+
+    function removeSlideFromPackage(slideIndex) {
+      if (confirm('Remove this item from the package?')) {
+        packages[editingPackageIndex].slides.splice(slideIndex, 1);
+        savePackagesToStorage();
+        renderEditPackageContentList();
+        toastr.success('Item removed.');
+      }
+    }
+
+    function addNewIndividualFile() {
+      addIndividualFileInput.click();
+    }
+
+    function handleAddIndividualFilesToEdit(files) {
+      if (editingPackageIndex === -1) {
+        toastr.error('No package selected for editing.');
+        return;
+      }
+      for (let file of files) {
+        if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+          toastr.error(`${file.name} is too large. Max ${MAX_FILE_SIZE_MB}MB.`);
+          continue;
+        }
+        packages[editingPackageIndex].slides.push({ type: 'file', file: file });
+      }
+      savePackagesToStorage();
+      renderEditPackageContentList();
+      toastr.success('Files added to package.');
+    }
+
+    function updatePackage() {
+      const newName = editPackageNameInput.value.trim();
+      if (!newName) {
+        toastr.error('Package name cannot be empty.');
+        return;
+      }
+
+      if (editingPackageIndex !== -1) {
+        packages[editingPackageIndex].name = newName;
+        savePackagesToStorage();
+        renderPackageList();
+        closeEditModal();
+        toastr.success('Package updated successfully!');
+      }
+    }
+    // --- Media Scene Functions ---
+    function openCreateMediaSceneModal() {
+        editingMediaSceneIndex = -1; // Indicate new scene creation
+        mediaSceneModalTitle.textContent = 'Create Media Scene';
+        mediaSceneNameInput.value = '';
+        currentMediaSceneFiles = [];
+        displayMediaSceneFiles();
+        mediaSceneModal.style.display = 'flex';
+        mediaSceneDropZone.innerHTML = 'Drop files here or click to select'; // Reset text
+    }
+
+    function editMediaScene(slideIndex) {
+        if (editingPackageIndex === -1 || !packages[editingPackageIndex]) {
+            toastr.error('No package selected for editing this scene.');
+            return;
+        }
+        const mediaScene = packages[editingPackageIndex].slides[slideIndex];
+        if (!mediaScene || mediaScene.type !== 'media-package') {
+            toastr.error('Selected slide is not a media scene.');
+            return;
+        }
+        editingMediaSceneIndex = slideIndex; // Store index for editing
+        mediaSceneModalTitle.textContent = `Edit Media Scene: ${mediaScene.name}`;
+        mediaSceneNameInput.value = mediaScene.name;
+        currentMediaSceneFiles = [...mediaScene.mediaItems.map(item => item.file)]; // Clone files for editing
+        displayMediaSceneFiles();
+        mediaSceneModal.style.display = 'flex';
+        mediaSceneDropZone.innerHTML = 'Drop files here or click to select'; // Reset text
+    }
+
+    function closeMediaSceneModal() {
+        mediaSceneModal.style.display = 'none';
+        editingMediaSceneIndex = -1;
+        currentMediaSceneFiles = [];
+    }
+
+    function handleMediaSceneFiles(files) {
+        for (let file of files) {
+            if (file.size > 50 * 1024 * 1024) {
+                toastr.error(`${file.name} is too large. Max 50MB.`);
+                continue;
+            }
+            // Check if file already exists by name to prevent duplicates during addition
+            if (!currentMediaSceneFiles.some(f => f.name === file.name)) {
+                currentMediaSceneFiles.push(file);
+            } else {
+                toastr.warning(`${file.name} is already in this scene.`);
+            }
+        }
+        displayMediaSceneFiles();
+    }
+
+    function displayMediaSceneFiles() {
+        const list = currentMediaSceneFiles.map((f, index) => `
+            <div class="bg-gray-800 p-3 rounded flex justify-between items-center">
+            <span><i class="file-icon ${getFileIcon(f.type)}"></i> ${f.name} (${(f.size / 1024 / 1024).toFixed(2)} MB)</span>
+            <button onclick="removeFileFromMediaScene(${index})" class="text-red-500 hover:underline">Remove</button>
+            </div>
+        `).join('');
+        mediaSceneFilesList.innerHTML = list || '<p class="text-gray-400">No files in this scene yet.</p>';
+        mediaSceneDropZone.innerHTML = `Drop files here or click to select (${currentMediaSceneFiles.length} files selected)`;
+    }
+
+    function removeFileFromMediaScene(index) {
+        currentMediaSceneFiles.splice(index, 1);
+        displayMediaSceneFiles();
+    }
+
+    function saveMediaScene() {
+        const sceneName = mediaSceneNameInput.value.trim();
+        if (!sceneName || currentMediaSceneFiles.length === 0) {
+            toastr.error('Please enter a scene name and add files to the scene.');
+            return;
+        }
+
+        const mediaItems = currentMediaSceneFiles.map(file => ({
+            file: file,
+            // Basic playback settings for loop
+            playbackSettings: { loop: file.type.includes('video') || file.type.includes('audio') }
+        }));
+
+        const newMediaScene = {
+            type: 'media-package',
+            name: sceneName,
+            mediaItems: mediaItems
+        };
+
+        if (editingMediaSceneIndex === -1) {
+            // Add new scene
+            packages[editingPackageIndex].slides.push(newMediaScene);
+            renderEditPackageContentList();
+        closeMediaSceneModal();
+            toastr.success('Media Scene created successfully!');
+        } else {
+            // Update existing scene
+            packages[editingPackageIndex].slides[editingMediaSceneIndex] = newMediaScene;
+            renderEditPackageContentList();
+        closeMediaSceneModal();
+            toastr.success('Media Scene updated successfully!');
+        }
+        
+        renderEditPackageContentList();
+        closeMediaSceneModal();
+    }
+
+
+    // --- Presentation Functions ---
+    function showPresentation(index) {
+        console.log("Attempting to show presentation for package index:", index);
+        if (index < 0 || index >= packages.length) {
+            toastr.error('Invalid package selected.');
+            console.error('Invalid package index:', index);
+            return;
+        }
+
+        presentationPackageIndex = index;
+        currentSlideIndex = 0;
+        isCurrentSlidePdf = false; // Reset when starting new presentation
+
+        presentationScreen.style.display = 'flex';
+        renderPresentationSlide();
+        setupPresentationControls(); // Initialize controls and hiding behavior
+        toastr.info(`Starting presentation for "${packages[index].name}"`);
+    }
+
+    function setupPresentationControls() {
+      // Make controls visible initially
+      presentationControls.classList.remove('hidden-controls');
+      navButtonContainer.classList.remove('hidden-nav'); 
+
+      // Attach event listeners to the presentation screen
+      presentationScreen.addEventListener('mousemove', showControls);
+      presentationScreen.addEventListener('keydown', handleKeyPress);
+      
+      // Immediately start the timer to hide controls after a delay
+      hideControlsAfterDelay();
+    }
+
+    // Function to show controls and reset hide timer
+    function showControls() {
+      clearTimeout(controlsHideTimeout); // Clear any existing hide timer
+      presentationControls.classList.remove('hidden-controls'); // Show bottom controls
+      navButtonContainer.classList.remove('hidden-nav'); // Show prev/next buttons
+      hideControlsAfterDelay(); // Start a new timer to hide them
+    }
+
+    // Function to hide controls after a delay
+    function hideControlsAfterDelay() {
+      controlsHideTimeout = setTimeout(() => {
+        presentationControls.classList.add('hidden-controls'); // Hide bottom controls
+        navButtonContainer.classList.add('hidden-nav'); // Hide prev/next buttons
+      }, 2000); // Hide after 2 seconds of inactivity
+    }
+
+    function handleKeyPress(e) {
+      if (presentationScreen.style.display === 'flex') {
+        showControls(); // Show controls on key press
+        if (e.key === 'ArrowRight') {
+          nextSlide();
+        } else if (e.key === 'ArrowLeft') {
+          prevSlide();
+        } else if (e.key === 'Escape') {
+          exitPresentation();
+        } else if (e.key === ' ') { // Spacebar for play/pause
+          if (currentPlayingMediaElements.length > 0) {
+            toggleAllMediaPlayPause();
+          }
+        }
+      }
+    }
+
+    function renderPresentationSlide() {
+        if (presentationPackageIndex === -1 || !packages[presentationPackageIndex]) {
+            console.error("No presentation package selected or package does not exist.");
+            presentationContentWrapper.innerHTML = '<p class="text-teal-300 text-2xl animate-pulse">Error: No package to present.</p>';
+            playPauseAllButton.classList.add('hidden');
+            return;
+        }
+
+        const pkg = packages[presentationPackageIndex];
+        currentPlayingMediaElements = []; // Reset media elements for the new slide
+        isCurrentSlidePdf = false; // Assume not PDF by default for the new slide
+
+        if (!pkg || pkg.slides.length === 0) {
+            presentationContentWrapper.innerHTML = '<p class="text-teal-300 text-2xl animate-pulse">No content in this package.</p>';
+            playPauseAllButton.classList.add('hidden');
+            return;
+        }
+
+        const currentSlide = pkg.slides[currentSlideIndex];
+
+        // Clear previous content and hide elements for transition
+        presentationContentWrapper.innerHTML = ''; 
+        playPauseAllButton.classList.add('hidden'); 
+
+        setTimeout(() => { // Delay for smooth transition
+            if (currentSlide.type === 'file') {
+                const file = currentSlide.file;
+                let fileURL;
+                let mediaElement;
+
+                // Handle PDF, PPT, and DOC files
+                if (file.type.includes('pdf') || file.type.includes('powerpoint') || file.type.includes('document')) {
+                    isCurrentSlidePdf = file.type.includes('pdf'); 
+
+                    fileURL = URL.createObjectURL(file);
+                    
+                    mediaElement = document.createElement('iframe');
+                    mediaElement.src = fileURL;
+                    mediaElement.title = file.name;
+                    mediaElement.classList.add('document-viewer');
+                    
+                    mediaElement.onload = () => {
+                        console.log(`Document loaded: ${file.name}`);
+                        URL.revokeObjectURL(fileURL); // Clean up URL
+                        if (isCurrentSlidePdf) {
+                          // Inform user about PDF navigation
+                          toastr.info('Click inside the PDF to use its own page navigation controls (if available).');
+                        } else { // For PPT/DOC that browsers might handle via iframe
+                          toastr.warning('PPT/DOC files may download or require a browser plugin to view directly. Use browser controls within the frame if visible.');
+                        }
+                    };
+                } 
+                // Handle image files
+                else if (file.type.includes('image') || file.type.includes('gif')) {
+                    fileURL = URL.createObjectURL(file);
+                    mediaElement = document.createElement('img');
+                    mediaElement.src = fileURL;
+                    mediaElement.alt = file.name;
+                    mediaElement.onload = () => URL.revokeObjectURL(fileURL);
+                } 
+                // Handle video files
+                else if (file.type.includes('video')) {
+                    fileURL = URL.createObjectURL(file);
+                    mediaElement = document.createElement('video');
+                    mediaElement.src = fileURL;
+                    mediaElement.controls = false;
+                    mediaElement.autoplay = true;
+                    mediaElement.loop = true;
+                    mediaElement.muted = true; // Start muted, user can unmute
+                    mediaElement.onloadeddata = () => {
+                        mediaElement.muted = false; // Unmute after data loaded for better UX
+                        URL.revokeObjectURL(fileURL); // Clean up URL
+                    };
+                    currentPlayingMediaElements.push(mediaElement);
+                    playPauseAllButton.classList.remove('hidden');
+                } 
+                // Handle audio files
+                else if (file.type.includes('audio')) {
+                    fileURL = URL.createObjectURL(file);
+                    mediaElement = document.createElement('audio');
+                    mediaElement.src = fileURL;
+                    mediaElement.controls = false; // Hidden controls
+                    mediaElement.autoplay = true;
+                    mediaElement.loop = true;
+                    mediaElement.onloadeddata = () => URL.revokeObjectURL(fileURL); // Clean up URL
+                    currentPlayingMediaElements.push(mediaElement);
+                    playPauseAllButton.classList.remove('hidden');
+                } 
+                // Fallback for unrecognized types (e.g., text, unknown binary)
+                else {
+                    fileURL = URL.createObjectURL(file);
+                    mediaElement = document.createElement('iframe');
+                    mediaElement.src = fileURL;
+                    mediaElement.title = file.name;
+                    mediaElement.classList.add('document-viewer');
+                    mediaElement.onload = () => URL.revokeObjectURL(fileURL);
+                    toastr.warning(`Attempting to display unknown file type: ${file.name}. May download or not render.`);
+                }
+
+                if (mediaElement) {
+                    mediaElement.classList.add('active'); // Apply transition class
+                    presentationContentWrapper.appendChild(mediaElement);
+
+                    // For single video/audio, add listeners for state update
+                    if (file.type.includes('video') || file.type.includes('audio')) {
+                        mediaElement.addEventListener('play', checkAllMediaStatus);
+                        mediaElement.addEventListener('pause', checkAllMediaStatus);
+                        mediaElement.addEventListener('ended', checkAllMediaStatus);
+                    }
+                }
+            } else if (currentSlide.type === 'media-package') {
+                currentSlide.mediaItems.forEach(mediaItem => {
+                    const file = mediaItem.file;
+                    const fileURL = URL.createObjectURL(file);
+                    let mediaElement;
+
+                    if (file.type.includes('image') || file.type.includes('gif')) {
+                        mediaElement = document.createElement('img');
+                        mediaElement.src = fileURL;
+                        mediaElement.alt = file.name;
+                        mediaElement.onload = () => URL.revokeObjectURL(fileURL);
+                    } else if (file.type.includes('video')) {
+                        mediaElement = document.createElement('video');
+                        mediaElement.src = fileURL;
+                        mediaElement.controls = false;
+                        mediaElement.autoplay = true;
+                        mediaElement.loop = mediaItem.playbackSettings.loop;
+                        mediaElement.muted = true; // Start muted
+                        mediaElement.onloadeddata = () => {
+                            mediaElement.muted = false; // Unmute after data loaded
+                            URL.revokeObjectURL(fileURL);
+                        };
+                        currentPlayingMediaElements.push(mediaElement);
+                    } else if (file.type.includes('audio')) {
+                        mediaElement = document.createElement('audio');
+                        mediaElement.src = fileURL;
+                        mediaElement.controls = false; // Hidden controls
+                        mediaElement.autoplay = true;
+                        mediaElement.loop = mediaItem.playbackSettings.loop;
+                        mediaElement.onloadeddata = () => URL.revokeObjectURL(fileURL);
+                        currentPlayingMediaElements.push(mediaElement);
+                    } else {
+                        // For other file types in a media package, display an icon or placeholder
+                        mediaElement = document.createElement('div');
+                        mediaElement.className = 'flex flex-col items-center justify-center p-4 bg-gray-800 rounded-lg text-teal-300';
+                        mediaElement.innerHTML = `
+                            <i class="file-icon ${getFileIcon(file.type)} text-6xl mb-2"></i>
+                            <span class="text-sm text-center">${file.name}</span>
+                            <span class="text-xs text-gray-400">(Cannot play in sync)</span>
+                        `;
+                    }
+
+                    if (mediaElement) {
+                        mediaElement.classList.add('active'); // Apply transition class
+                        presentationContentWrapper.appendChild(mediaElement);
+
+                        // Add listeners for play/pause button state
+                        if (file.type.includes('video') || file.type.includes('audio')) {
+                            mediaElement.addEventListener('play', checkAllMediaStatus);
+                            mediaElement.addEventListener('pause', checkAllMediaStatus);
+                            mediaElement.addEventListener('ended', checkAllMediaStatus);
+                        }
+                    }
+                });
+                if (currentPlayingMediaElements.length > 0) {
+                    playPauseAllButton.classList.remove('hidden');
+                    // Attempt to play all media after they are added
+                    // This is crucial for autoplay to work after user interaction (click on present button)
+                    Promise.all(currentPlayingMediaElements.map(media => media.play().catch(e => console.warn("Autoplay prevented for media:", e))))
+                        .then(() => {
+                            console.log("All media started playing (if allowed by browser).");
+                            checkAllMediaStatus(); // Update button state
+                        });
+                }
+            }
+            checkAllMediaStatus(); // Ensure button state is correct after rendering
+        }, 500); // Match this with the transition duration
+    }
+
+    function checkAllMediaStatus() {
+        if (currentPlayingMediaElements.length === 0) {
+            playPauseAllButton.classList.add('hidden');
+            return;
+        }
+        // Check if ANY media is playing (or trying to play)
+        areAllMediaPlaying = currentPlayingMediaElements.some(media => !media.paused && !media.ended && media.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA);
+        if (areAllMediaPlaying) {
+            playPauseAllIcon.classList.remove('fa-play');
+            playPauseAllIcon.classList.add('fa-pause');
+            playPauseAllText.textContent = 'Pause All Media';
+        } else {
+            playPauseAllIcon.classList.remove('fa-pause');
+            playPauseAllIcon.classList.add('fa-play');
+            playPauseAllText.textContent = 'Play All Media';
+        }
+    }
+
+    function toggleAllMediaPlayPause() {
+        if (currentPlayingMediaElements.length === 0) return;
+
+        if (areAllMediaPlaying) {
+            currentPlayingMediaElements.forEach(media => media.pause());
+        } else {
+            // Use Promise.all to handle potential autoplay policies
+            Promise.all(currentPlayingMediaElements.map(media => media.play().catch(e => console.warn("Failed to play media:", e))))
+                .then(() => {
+                    console.log("Attempted to play all media.");
+                });
+        }
+        // Give a slight delay for media state to update before checking
+        setTimeout(checkAllMediaStatus, 100); 
+    }
+
+    function nextSlide() {
+      const pkg = packages[presentationPackageIndex];
+
+      // Always navigate to the next slide in the package
+      if (pkg && currentSlideIndex < pkg.slides.length - 1) {
+          // Stop current media before changing slide
+          currentPlayingMediaElements.forEach(media => media.pause());
+          currentSlideIndex++;
+          renderPresentationSlide();
+      } else {
+        toastr.info('End of presentation.');
+      }
+      showControls(); // Keep controls visible after manual navigation
+    }
+
+    function prevSlide() {
+      const pkg = packages[presentationPackageIndex];
+
+      // Always navigate to the previous slide in the package
+      if (currentSlideIndex > 0) {
+          // Stop current media before changing slide
+          currentPlayingMediaElements.forEach(media => media.pause());
+          currentSlideIndex--;
+          renderPresentationSlide();
+      } else {
+        toastr.info('Beginning of presentation.');
+      }
+      showControls(); // Keep controls visible after manual navigation
+    }
+
+    function exitPresentation() {
+      // Remove event listeners when exiting presentation
+      presentationScreen.removeEventListener('mousemove', showControls);
+      presentationScreen.removeEventListener('keydown', handleKeyPress);
+      clearTimeout(controlsHideTimeout); // Clear any pending hide timeouts
+
+      // Stop all playing media before hiding
+      currentPlayingMediaElements.forEach(media => media.pause());
+      currentPlayingMediaElements = [];
+
+      // Remove active class for smooth transition out
+      const currentlyActiveElements = presentationContentWrapper.querySelectorAll('.active, .document-viewer');
+      currentlyActiveElements.forEach(el => el.classList.remove('active'));
+
+      setTimeout(() => {
+        presentationScreen.style.display = 'none';
+        presentationContentWrapper.innerHTML = ''; // Clear content
+        
+        // Clear any PDF specific states no longer managed by global nav
+        isCurrentSlidePdf = false;
+
+        presentationPackageIndex = -1;
+        currentSlideIndex = 0;
+        areAllMediaPlaying = false;
+        playPauseAllButton.classList.add('hidden'); // Ensure button is hidden on exit
+      }, 500); // Match transition duration
+    }
+  </script>
+</body>
+</html>
